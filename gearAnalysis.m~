@@ -1,4 +1,4 @@
-function [bS,bES,bFOS,cS,wEs,wFOS] = gearAnalysis(pinion1Teeth,gear1Teeth,pinion2Teeth,gear2Teeth,diametralPitch1,diametralPitch2,qualityNumber,faceWidth,material1,material2,material3,material4,sRatio1,sRatio2,sRatio3,sRatio4,J1,J2,J3,J4,tPressAngle)
+function [bS,bES,bFOS,cS,wES,wFOS] = gearAnalysis(pinion1Teeth,gear1Teeth,pinion2Teeth,gear2Teeth,diametralPitch1,diametralPitch2,qualityNumber,faceWidth,material1,material2,material3,material4,sRatio1,sRatio2,sRatio3,sRatio4,J1,J2,J3,J4,tPressAngle)
 %calculateContact Calculates contact stress and wear factor of safety for
 %gear and pinion
 
@@ -21,7 +21,7 @@ mG = [1, 1, 1, 1]; % gear ratios (never less than 1), Eq. 14-22, p. 746
 enduranceStrength = [1, 1, 1, 1]; % bending endurance strength, Eq. 14-17
 bendingStress = [0, 0, 0, 0]; % gear bending stress
 J = [J1, J2, J3, J4]; % geometry factor (for 16 to 64 teeth), (64 to 16 teeth), (16 to 56 teeth), (56 to 16 teeth)  Fig. 14-6, p. 745
-H = [29.75,29.75, 0.9*29.75, 0.9*29.75]; % power, in hp (transmitted from pinion! p. 760)
+H = [5.483,5.483*0.9, 5.483*0.9, 5.483*0.9^2]; % power, in hp (transmitted from pinion! p. 760)
 V = [0, 0, 0, 0]; % pitch line velocity
 Wt = [0, 0, 0, 0]; % transmitted load
 Kv = [0, 0, 0, 0]; % dynamic factor --> accounts for inaccuracies in manufacture and meshing of gear teeth in action, Eq. 14-27, p.748
@@ -70,16 +70,18 @@ for i = 1:4
     switch materials(i)
         case 1 % grade 1 steel (1020)
             St(i) = 77.3*131 +12800; % Figure 14-2
-            poisson(i) = 0.292; % Table A-5
             Sc(i) = 322*131 + 29100; % Figure 14-5
+            Cp(i) = 2300; % Table 14-8
         case 2 % cast iron
             St(i) = 8500; % Class 30, Table 14-4
-            poisson(i) = 0.211; % Table A-5
+           
             Sc(i) = 65000; % Table 14-7, class 30
+            Cp(i) = 1960; % Table 14-8
         case 3 % grade 2 steel (1020)
             St(i) = 102*131 + 16400; % Figure 14-2
             poisson(i) = 0.292; % Table A-5
             Sc(i) = 349*131 + 34300; % Figure 14-5
+            Cp(i) = 2300; % Table 14-8
         otherwise
     end
     
@@ -126,17 +128,8 @@ for i = 1:4
     Cma(i) = ACma(i) + BCma(i)*F(i) + CCma(i)*F(i)^2;
     %calculate Km, Eq. 14-30, p. 751
     Km(i) = 1 + Cmc(i)*(Cpf(i)*Cpm(i) + Cma(i)*Ce(i));
-    % calculate tR (rim thickness below the tooth) and ht (tooth height),
-    % p. 141 of Boston Gears catalogue
-    if (diametralPitch <= 20) % diametral pitch of 20 and finer
-        ht(i) = 2.2/diametralPitch + 0.002;
-    else % diametral pitch courser than 20
-        ht(i) = 2.157/diametralPitch;
-    end
-    % calculate tR (rim thickness below tooth), p.756
-    tR(i) = (outsideDiameters(i) - hubDiameters(i) - 2*ht(i))/2;
-    % calculate mB, Eq. 14-39, p. 756
-    mB(i) = tR(i) / ht(i);
+    % Calculate Ks
+    Ks(i) = 1.192*((F(i)*sqrt(Y(i)))/PD(i))^0.0535;
     % finally calculating bending stress! Eq. 14-15
     bendingStress(i) = Wt(i)*Ko(i)*Kv(i)*Ks(i)*(PD(i)/F(i))*((Km(i)*kB(i))/J(i));
     
@@ -155,7 +148,7 @@ for i = 1:4
     % Calculate YN --> stress-cycle factor for bending strength, Fig 14-14,
     % p. 755
     if (N_cycles(i) > 10^7) % YN = 1 at 10^7 cycles
-        YN(i) = 1.3558*N_cycles(i)^-0.0178; % use YN = 1.3558N^-0.0178 because it is more conservative!
+        YN(i) = 1.6831*N_cycles(i)^-0.0323; % use YN = 1.3558N^-0.0178 because it is more conservative!
     end
     
     % calculate bending factor of safety, Eq. 14-41, p. 757
@@ -166,18 +159,18 @@ for i = 1:4
     enduranceStrength(i) = (St(i)*YN(i))/(FOS(i)*KT(i)*KR(i));
     
     %% Exclusive to Contact
-    % calculate Cp --> elastic coefficient
-    if (mod(i,2) == 1) % on pinion
-        Cp(i) = sqrt(1/(pi*((1-poisson(i)^2)/E(i)+(1-poisson(i+1)^2)/E(i+1))));
-    else % on gear
-        Cp(i) = sqrt(1/(pi*((1-poisson(i-1)^2)/E(i-1)+(1-poisson(i)^2)/E(i))));
-    end
+    % calculate Cp --> elastic coefficient (given)
+%     if (mod(i,2) == 1) % on pinion
+%         Cp(i) = sqrt(1/(pi*((1-poisson(i)^2)/E(i)+(1-poisson(i+1)^2)/E(i+1))));
+%     else % on gear
+%         Cp(i) = sqrt(1/(pi*((1-poisson(i-1)^2)/E(i-1)+(1-poisson(i)^2)/E(i))));
+%     end
     
     % calculate I --> geometry factor, Eq. 14-23, p. 747
     %Surface-Strength Geometry Factor Eq.(14-23)
     %0 means external gear, 1 means internal gear
     % convert from degrees to radians
-    
+    tPressure(i) = tPressure(i)*(pi/180);
     if (I(i) == 0)
         I(i) = ((cos(tPressure(i))*sin(tPressure(i)))/(2*mN(i)))*(mG(i)/(mG(i)+1));
     else 
@@ -185,7 +178,7 @@ for i = 1:4
     end
     
     % calculate ZN, stress-cycle factor, Fig. 14-15, p. 755
-    ZN(i) = 1.4488*N_cycles(i)^(-0.023);
+    ZN(i) = 2.466*N_cycles(i)^(-0.056);
     
     % calculate contact stress
     contactStress(i) = Cp(i)*sqrt(Wt(i)*Ko(i)*Ks(i)*((Km(i)*Cf(i))/(dP(i)*F(i)*I(i))));
