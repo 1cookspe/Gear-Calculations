@@ -1,17 +1,16 @@
-function [bS,bES,bFOS,cS,wES,wFOS] = gearAnalysis(pinion1Teeth,gear1Teeth,pinion2Teeth,gear2Teeth,diametralPitch1,diametralPitch2,qualityNumber,faceWidth,material1,material2,material3,material4,sRatio1,sRatio2,sRatio3,sRatio4,J1,J2,J3,J4,tPressAngle)
+function [bS,bES,bFOS,cS,wES,wFOS] = gearAnalysis(pinion1Teeth,gear1Teeth,pinion2Teeth,gear2Teeth,diametralPitch1,diametralPitch2,qualityNumber,faceWidth,material1,material2,material3,material4,J1,J2,J3,J4,tPressAngle,Y1,Y2,Y3,Y4)
 %calculateContact Calculates contact stress and wear factor of safety for
 %gear and pinion
 
 %% Variables for each configuration of 4 gears
+initialSpeed = 10965; % starting speed from specifications
 NP = [pinion1Teeth, pinion1Teeth, pinion2Teeth, pinion2Teeth]; % number of teeth on pinion
 NG = [gear1Teeth, gear1Teeth, gear2Teeth, gear2Teeth]; % number of teeth on gear
 PD = [diametralPitch1, diametralPitch1, diametralPitch2, diametralPitch2]; % transverse diametral pitch
 dP = [0, 0, 0, 0]; % pitch diameter of pinion, calculate later
-nP = [45000, 1, 1, 1]; % pinion speed, in rev/min, calculate later
+nP = [initialSpeed, 1, 1, 1]; % pinion speed, in rev/min, calculate later
 Qv = [qualityNumber, qualityNumber, qualityNumber, qualityNumber]; % gear quality number for calculating of Kv (p. 748)
 F = [faceWidth, faceWidth, faceWidth, faceWidth]; % face width size of gear (from Boston datasheet)
-sRatios = [sRatio1, sRatio2, sRatio3, sRatio4]; % s1/s for calculation of Cpm, Eq. 14-33, p. 752
-Cpm = [1, 1, 1, 1]; % (pinion proprtion modifier) assume gear is equally in between bearings Eq. 14-33, p. 752 --> to be calculated
 FOS = [1, 1, 1, 1]; % bending factor of safety, Eq. 14-41, p. 757
 St = [1,1,1,1]; % AGMA bending strength, p. 739 --> should be fed in because they can be very variable depending on material
 N_cycles = [1, 1, 1, 1]; % load cycles, changes with position in gear train.
@@ -38,6 +37,9 @@ contactStress = [1,1,1,1]; % contact stress
 contactEnduranceStrength = [1,1,1,1]; % wear endurance strength, Eq. 14-18
 cFOS = [1,1,1,1]; % contact or wear factor of safety, Eq. 14-42
 materials = [material1,material2,material3,material4]; % holds materials of each pinion and gear
+Y = [1, 1, 1, 1]; % Lewis Form Factor Y, p. 730 --> set later
+hardness = [1,1,1,1]; % for CH --> set later
+Ch = [1,1,1,1]; % same material, p. 753
 
 %% Constants for each configuration of 4 gears
 Ko = [1.75, 1.75, 1.75, 1.75]; % overload factor. The power source is uniform, however the machine is subject to heavy loads in its heavy duty mining application.
@@ -49,33 +51,70 @@ CCma = [-0.930*10^-4, -0.930*10^-4, -0.930*10^-4, -0.930*10^-4]; % constant for 
 Ce = [1, 1, 1, 1]; % mesh alignment correction factor, assumed all other conditions, Eq 14-35, p. 752
 KR = [1, 1, 1, 1]; % reliability factor of 99% for each (Table 14-10, p. 756)
 KT = [1, 1, 1, 1]; % temperature factor = 1 because T < 250 C (p. 756)
-initialSpeed = 1125*40; % starting speed from specifications (rpm x V)
-initialLife = initialSpeed*240000;
-initialHorsepower = 29.75;
+initialLife = initialSpeed*240000; % speed * minutes = revolutions
+initialHorsepower = 5.483; % obtained from torque speed curve
 mN = [1,1,1,1]; % load sharing factor (1 for spur gears)
 Cf = [1,1,1,1]; % surface condition factor (given as 1)
-Ch = [1,1,1,1]; % same material, p. 753
 kB = [1, 1, 1, 1]; % rim thickness factor, Eq. 14-40, p. 756 (assume 1)
+Cpm = [1.1, 1.1, 1.1, 1.1]; % (pinion proprtion modifier) assume gear is on either side of bearings, Eq. 14-33, p. 752
 
 %% Loop through all gears in configuration
 for i = 1:4
     %% Set material properties
     % St1, St2, St3, St4, poisson1, poisson2, poisson3, poisson4, Sc1, Sc2,
     % Sc3, Sc4
+    k = 0;
+    if (mod(i, 2) == 1) % on pinion
+        k = i + 1;
+    else % on gear
+        k = i - 1;
+    end
+    
+    if (materials(i) == 1 && materials(k) == 1) % steel on steel
+        Cp(i) = 2300; % Table 14-8
+    elseif (materials(i) == 1 && materials(k) == 2) % steel on iron
+        Cp(i) = 2100;
+    elseif (materials(i) == 2 && materials(k) == 1) % iron on steel
+        Cp(i) = 2100;
+    elseif (materials(i) == 2 && materials(k) == 2) % iron on iron
+        Cp(i) = 1960;
+    end
+    
+    % determine properties for materials
     switch materials(i)
-        case 1 % grade 1 steel (1020)
-            St(i) = 77.3*131 +12800; % Figure 14-2
+        case 1 % grade 2 steel (1020)
+            St(i) = 102*131 +16400; % Figure 14-2
             Sc(i) = 322*131 + 29100; % Figure 14-5
-            Cp(i) = 2300; % Table 14-8
+            hardness(i) = 131; % Table A-20
         case 2 % cast iron
             St(i) = 8500; % Class 30, Table 14-4
             Sc(i) = 65000; % Table 14-7, class 30
-            Cp(i) = 1960; % Table 14-8
-        case 3 % grade 2 steel (1020)
-            St(i) = 102*131 + 16400; % Figure 14-2
-            Sc(i) = 349*131 + 34300; % Figure 14-5
-            Cp(i) = 2300; % Table 14-8
+            hardness(i) = 174; % Table 14-4
         otherwise
+    end
+    
+    
+    %% determine Y (Lewis Form Factor) from teeth
+    if (mod(i,2) == 1) % on pinion
+        switch NP(i)
+            case 16
+                Y(i) = 0.296;
+            case 20
+                Y(i) = 0.322;
+            otherwise
+        end
+    else % on gear
+        switch NG(i)
+            case 64
+                Y(i) = 0.425;
+            case 70
+                Y(i) = 0.429;
+            case 80
+                Y(i) = 0.436;
+            case 100
+                Y(i) = 0.447;
+            otherwise
+        end
     end
     
     %% Bending stress
@@ -85,10 +124,10 @@ for i = 1:4
     if (i <= 2) % first pinion or gear
         nP(i) = initialSpeed;
         % calculate power (horsepower)
-        H(i) = initialHorsepower;
+%         H(i) = initialHorsepower;
     else % second pinion or gear
         nP(i) = initialSpeed / mG(1); % speed decreased by initial ratio of first gear train
-        H(i) = initialHorsepower * 0.9; % efficiency
+%         H(i) = initialHorsepower * 0.9; % efficiency
     end
     % calculate pitch line velocity (V)
     V(i) = (pi*dP(i)*nP(i))/12;
@@ -111,12 +150,7 @@ for i = 1:4
     elseif(F(i) > 17 && F(i) <= 40)
         Cpf(i) = firstValue - 0.1109 + 0.0207*F - 0.000228*(F(i))^2;
     end
-    % calculate Cpm, Eq. 14-33, p. 752
-    if (sRatios(i) < 0.175) % gear in middle of bearings
-        Cpm(i) = 1;
-    else % gear slightly offset
-        Cpm(i) = 1.1;
-    end
+    % calculate Cpm, Eq. 14-33, p. 752 --> ALREADY ASSUMED TO BE 1.1
     % calculate Cma Eq. 14-34, p. 752
     Cma(i) = ACma(i) + BCma(i)*F(i) + CCma(i)*F(i)^2;
     %calculate Km, Eq. 14-30, p. 751
@@ -172,6 +206,11 @@ for i = 1:4
     
     % calculate ZN, stress-cycle factor, Fig. 14-15, p. 755
     ZN(i) = 2.466*N_cycles(i)^(-0.056);
+    
+    % calculate CH (if it is a gear)
+    if (mod(i,2) == 0) % is a gear
+        Ch(i) = 1 + (8.98*10^-3*(hardness(i)/hardness(i-1)) - 8.29*10^-3)*(mG(i)-1);
+    end
     
     % calculate contact stress
     contactStress(i) = Cp(i)*sqrt(Wt(i)*Ko(i)*Ks(i)*((Km(i)*Cf(i))/(dP(i)*F(i)*I(i))));
