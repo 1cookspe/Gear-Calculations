@@ -111,5 +111,4 @@ end
 "Congratulations! Use that bearing!"
 totalReliability
 
-% once you have Fr can find K necessary to cancel out axial load through thrust
-% F_thrust = (0.47*F_radial)/K
+% once you have Fr 
